@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>语音问卷代理</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --border: #2d3a4f;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --accent: #5b9cf5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+    .wrap {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 1.25rem;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    h1 { font-size: 1.35rem; font-weight: 600; margin: 0 0 0.5rem; }
+    .sub { color: var(--muted); font-size: 0.875rem; margin-bottom: 1.25rem; }
+    label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.35rem; }
+    textarea, input[type="text"] {
+      width: 100%;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.65rem 0.75rem;
+      font-size: 0.9rem;
+    }
+    textarea { min-height: 140px; font-family: ui-monospace, monospace; resize: vertical; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.75rem 0; }
+    button {
+      background: var(--accent);
+      color: #0a1628;
+      border: none;
+      border-radius: 8px;
+      padding: 0.55rem 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.secondary {
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    button.danger { background: #c94c4c; color: #fff; }
+    .answers {
+      margin-top: auto;
+      padding: 0.85rem 1rem;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 0.9rem;
+    }
+    .answers pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+    .err { color: #f0a0a0; font-size: 0.85rem; margin-top: 0.35rem; }
+    .api-row { margin-bottom: 1rem; }
+    .listening { outline: 2px solid var(--accent); outline-offset: 2px; }
+    #liveTranscript {
+      min-height: 2.5rem;
+      padding: 0.5rem 0.75rem;
+      background: var(--panel);
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+    #liveTranscript strong { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>LangGraph 语音问卷代理</h1>
+    <p class="sub">开启「持续聆听」后：说完一小段会<strong>自动停顿提交</strong>给后端分析；不设助手对话与朗读，仅在最下方<strong>实时刷新已锁定答案</strong>。可随时语音补充或改口。</p>
+
+    <div class="api-row">
+      <label for="apiBase">API 地址（留空则使用当前页面来源）</label>
+      <input id="apiBase" type="text" placeholder="http://127.0.0.1:8000" />
+    </div>
+
+    <label for="survey">问卷 JSON（默认 40 题：消防 / 地铁巡检 / 保险风控现场）</label>
+    <textarea id="survey" spellcheck="false">[
+  { "id": "fire_extinguisher", "text": "灭火器配置与压力指示是否正常？", "options": ["正常，在有效期内且压力正常", "部分缺失或失效，需整改", "严重缺失或全部失效", "现场未发现灭火器"] },
+  { "id": "exit_channel", "text": "疏散通道、安全出口是否畅通？", "options": ["畅通，无堆物遮挡", "局部堆放杂物，可立即清理", "严重堵塞或封闭", "通道设计不合规（狭窄/锁闭等）"] },
+  { "id": "electrical", "text": "电气线路与用电是否存在明显隐患？", "options": ["无明显私拉乱接、老化破损", "存在轻微老化或临时接线，需规范", "严重老化、超负荷或裸露带电", "存在明火或大功率设备违规使用"] },
+  { "id": "flammable", "text": "易燃易爆品存放是否符合要求？", "options": ["无违规存放或专库存放规范", "少量混放，可现场整改", "违规大量存放或未分类隔离", "与火源、热源安全距离不足"] },
+  { "id": "hydrant_sprinkler", "text": "室内消火栓/喷淋阀门及标识是否完好可用？", "options": ["设施完好、标识清晰、阀门可正常操作", "局部损坏或标识不清，需维护", "明显锈蚀、漏水或阀门无法操作", "现场无此类设施或不适用本项"] },
+  { "id": "alarm_detector", "text": "火灾报警探测器、手动报警按钮外观与工作状态？", "options": ["外观完好、无大面积遮挡或拆除", "部分故障或被遮挡，需恢复", "大量故障、拆除或失效", "无火灾自动报警系统"] },
+  { "id": "duty_fire", "text": "消防控制室/微型消防站值班与记录情况？", "options": ["有人值守、记录齐全", "在岗但记录不全或短暂离岗", "无人值守或长期脱岗", "无消防控制室/不适用本项"] },
+  { "id": "structure_leak", "text": "建筑主体与屋面是否有明显渗漏、裂缝或坍塌风险迹象？", "options": ["无明显渗漏与结构性裂缝", "有渗漏或裂缝，需计划维修", "渗漏严重或裂缝显著影响安全", "存在局部坍塌或随时可能坍塌风险"] },
+  { "id": "fire_door_shutter", "text": "防火门、防火卷帘下方是否堆物且闭门器/顺序器是否有效？", "options": ["闭门器完好、门下无堆物、卷帘标识清晰", "局部堆物或闭门器松脱，可当场整改", "常闭防火门长期敞开或卷帘无法联动", "严重锈蚀卡死或构件缺失"] },
+  { "id": "emergency_lighting", "text": "应急照明与疏散指示标志是否完好？", "options": ["外观完好、方向清晰、抽检可点亮", "部分灯具或标志损坏、方向不清", "大量不亮或被拆除", "无应急照明系统/不适用"] },
+  { "id": "smoke_exhaust", "text": "防排烟风机、风口与联动控制是否正常？", "options": ["设备在位、无异响、抽查联动正常", "风口遮挡或标识不清", "风机故障或长期停用", "无机械排烟/不适用本项"] },
+  { "id": "fire_seal", "text": "电缆井、管道井及穿墙孔洞防火封堵是否完整？", "options": ["封堵严密、无明显孔洞贯通", "局部封堵脱落，可限期修补", "多处贯通或未封堵", "无法检查/隐蔽工程未开箱"] },
+  { "id": "fire_lane", "text": "消防车道、消防救援登高场地是否被占用？", "options": ["车道畅通、登高面无固定障碍", "临时停放可立即劝离", "长期停车或固定构筑物占用", "车道宽度或转弯半径不足"] },
+  { "id": "hot_work", "text": "现场动火作业是否具备审批与监护人？", "options": ["未动火或票证监护齐全", "动火已结束、现场清理到位", "动火中手续不全或无监护人", "无证动火或可燃物未清除"] },
+  { "id": "kitchen_gas", "text": "餐饮区燃气泄漏报警与紧急切断装置是否正常？", "options": ["探测器与切断阀在位、显示正常", "探测器超期或部分厨房未覆盖", "报警器失效或切断阀故障", "使用瓶装气无集中报警/不适用本项"] },
+  { "id": "electrical_room", "text": "配电室/电气竖井温度、灭火器材及防尘是否符合要求？", "options": ["温感正常、灭火器配置规范、少尘", "室温偏高或积尘较多，需保洁降温", "小动物入侵风险或杂物堆放", "无独立配电室/仅共用电表间"] },
+  { "id": "fire_training", "text": "单位消防演练与员工灭火器/消火栓培训记录是否可查？", "options": ["年度内有演练与培训记录", "有记录但不全或超期", "无记录或从未组织", "新建项目尚未入伙/不适用"] },
+  { "id": "evacuation_map", "text": "疏散平面图是否张贴且与现场一致？", "options": ["张贴清晰、出口数量位置与现况一致", "过期或未更新局部改造", "缺失或与现场严重不符", "同一防火分区无张贴"] },
+  { "id": "sprinkler_clear", "text": "喷淋头下方净空与遮挡物、高温区域是否符合规范？", "options": ["净空满足、无吊挂装饰遮挡", "局部轻型遮挡可移改", "严重遮挡或喷头被涂料包裹", "冷库/风道等特殊区域未单独评估"] },
+  { "id": "fire_water_tank", "text": "消防水池/屋顶水箱液位与消防水泵房是否巡检正常？", "options": ["液位正常、泵控柜无故障报警", "液位偏低或仪表异常", "水泵无法联动或锈蚀严重", "项目由市政直供无水池/不适用"] },
+  { "id": "metro_psd", "text": "地铁站台门（PSD）与车体间隙及瞭望条件是否异常？", "options": ["间隙正常、无持续剐蹭声光报警", "站台门局部故障已打隔离", "瞭望条严重污损或照明不足", "该项为无站台门线路/不适用"] },
+  { "id": "metro_escalator", "text": "地铁扶梯急停、梳齿板、护裙板与防滑条是否完好？", "options": ["抽检急停可见、梯级与护板完好", "急停标识不清或梯级有缺口", "护裙板间隙过大或围裙板缺失", "扶梯停用无围挡警示"] },
+  { "id": "metro_tunnel_walk", "text": "端门至区间联络通道疏散指示与步行面是否畅通？", "options": ["指示清晰、无施工堆料", "局部照明不足", "通道积水或门体常闭器失效", "施工封闭需走其他路径"] },
+  { "id": "metro_station_hydrant", "text": "车站公共区消火栓箱内接口、水带、水枪是否齐全？", "options": ["配件齐全、无挪用", "水带老化或接口轻微渗漏", "箱门破损或长期无水", "设备间上锁且无巡检牌"] },
+  { "id": "metro_manual_alarm", "text": "车站手动火灾报警按钮是否可触及、标识清晰？", "options": ["高度与位置合理、保护罩完好", "被广告牌局部遮挡", "破损或高度不合理难触发", "大面积装饰遮挡"] },
+  { "id": "metro_smoke_control", "text": "车站公共区排烟口、风荷载标识与风管可见部位是否异常？", "options": ["风口无遮挡、标识可读", "风口附近堆放轻型物料", "排烟口被商铺装修封堵", "无吊顶区域无法目视检查"] },
+  { "id": "metro_flood", "text": "地铁出入口防洪挡板、横截沟与泵房水位是否处于备战状态？", "options": ["挡板完好、泵可试启、沟无淤堵", "局部密封条老化", "泵房故障或挡板缺失", "高架站无该项/不适用"] },
+  { "id": "metro_crowd", "text": "大客流疏导设施（铁马、广播、绕行指引）是否到位？", "options": ["导流设施摆放规整、广播可听清", "局部通道变窄有绊倒风险", "关键节点无人员值守预案未启动", "换乘限流标识错误"] },
+  { "id": "metro_yellow_line", "text": "候车安全线与候车秩序（身体探出、倚靠屏蔽门）是否合规？", "options": ["乘客基本在线后候车", "偶有拥挤探头需引导", "高峰期持续越线无人疏导", "地面警示磨损严重"] },
+  { "id": "metro_shop_elec", "text": "站内商铺/自助设备临时用电与插排是否符合要求？", "options": ["无私拉、PDU或明敷线缆规范", "个别延长线未固定", "大功率设备共用插座", "易燃品仓库与电气同室"] },
+  { "id": "metro_track_fence", "text": "轨行区隔离栅栏、端门闭锁是否有效？", "options": ["端门锁闭良好、栅栏无缺口", "门锁维修中双人确认", "栅栏破损可钻越", "端门常开无登记"] },
+  { "id": "metro_emergency_call", "text": "站台紧急通话器、AED与位置标识是否可用？", "options": ["通话测试通畅、AED在有效期内", "AED电极过期或通话杂音", "设备外壳破损或无法开机", "线路未配置AED/不适用"] },
+  { "id": "metro_afc_release", "text": "闸机紧急释放按钮、导向与应急广播联动是否清晰？", "options": ["标识清晰、培训知晓释放位置", "部分闸机标识脱落", "释放按钮被装饰遮挡", "未开展季度测试无记录"] },
+  { "id": "ins_risk_match", "text": "承保财产地址/标的用途与现场实际是否一致（保险巡检）？", "options": ["地址、业态与保单一致", "局部经营范围变更已报备", "实际用途与申报严重不符", "权属证明资料不齐"] },
+  { "id": "ins_neighbor_hazard", "text": "相邻场所是否存在明显火灾、爆炸或水损风险传导（保险）？", "options": ["隔壁为同类商业或办公，风险可控", "毗邻危化仓库或喷涂作业", "上方为餐饮密集油烟下排", "毗邻河道或深基坑渗水风险"] },
+  { "id": "ins_claim_history", "text": "近三年该址或关联主体是否有重大赔付与整改闭环（保险）？", "options": ["无重大赔案或已结案整改佐证齐备", "有小额赔付已了", "有重大未决赔案或反复出险", "新址无历史数据"] },
+  { "id": "ins_fire_maint", "text": "消防设施维保检测报告是否在有效期内且问题已闭环？", "options": ["最近的维保/年检报告一年内有，缺陷已复测", "报告超期但有排期", "无报告或重大缺陷未整改", "新建尚未首次检测"] },
+  { "id": "ins_public_warn", "text": "湿滑、台阶、玻璃门等公众意外伤害风险是否有警示与防滑（公责险）？", "options": ["警示牌、防滑条、雨天保洁到位", "局部瓷砖积水频繁", "大玻璃无明显防撞条", "台阶无提示曾有人摔倒"] },
+  { "id": "ins_water_damage", "text": "地下室、设备层防水与集水井自动抽水是否可靠（水损风险）？", "options": ["井内水位正常、双泵可切换", "单泵运行无备用", "井淤堵或高水位报警常响", "无地下室/不适用"] },
+  { "id": "ins_cctv_key", "text": "承保范围内监控是否覆盖出入口、收银、贵重物品区？", "options": ["关键路径录像可回溯≥30天", "部分盲区或硬盘故障", "大面积盲区", "业主未开放监控巡检"] }
+]</textarea>
+    <div class="row">
+      <button type="button" id="btnStart">开始会话</button>
+      <span id="sessionLabel" class="sub" style="margin:0"></span>
+    </div>
+
+    <label>语音识别</label>
+    <div id="liveTranscript">未聆听。开启「持续聆听」后，这里显示本轮已累计的识别结果与实时片段。</div>
+    <div id="speechErr" class="err"></div>
+
+    <div class="row" style="margin-top:0.75rem">
+      <input id="textIn" type="text" placeholder="或在此输入文字后发送（无助手回复，仅更新下方答案）…" style="flex:1; min-width:200px" />
+      <button type="button" id="btnSend">发送</button>
+      <button type="button" id="btnMic" class="secondary">持续聆听：关</button>
+    </div>
+
+    <div class="answers" style="margin-top:1.5rem; flex:1">
+      <strong>已锁定答案</strong>
+      <div id="answersUpdated" class="sub" style="margin:0.35rem 0 0.5rem; font-size:0.8rem"></div>
+      <pre id="answersBox">{}</pre>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const answersBox = $("answersBox");
+    const answersUpdatedEl = $("answersUpdated");
+    const speechErr = $("speechErr");
+    const liveEl = $("liveTranscript");
+
+    /** 停顿多久（毫秒）后把本轮累积的识别结果发给后端 */
+    const SILENCE_AFTER_FINAL_MS = 1600;
+
+    function apiUrl(path) {
+      const base = ($("apiBase").value || "").replace(/\/$/, "");
+      if (base) return base + path;
+      return path;
+    }
+
+    let sessionId = null;
+    let answers = {};
+    let recognition = null;
+
+    let micArmed = false;
+    let voiceFinalBuffer = "";
+    let flushTimer = null;
+    let lastInterim = "";
+
+    const msgQueue = [];
+    let drainRunning = false;
+
+    function setLiveHint() {
+      if (!micArmed) {
+        liveEl.textContent = "未聆听。点击「持续聆听」开始。";
+        return;
+      }
+      const head = voiceFinalBuffer ? "本轮已确定片段：" + voiceFinalBuffer : "本轮尚无确定片段…";
+      const tail = lastInterim ? " ｜ 实时：" + lastInterim : "";
+      liveEl.innerHTML = "<strong>聆听中</strong> — " + head + (tail ? "<br/><span style='opacity:.85'>" + tail + "</span>" : "");
+    }
+
+    function setAnswers(obj) {
+      answers = obj || {};
+      answersBox.textContent = JSON.stringify(answers, null, 2);
+      const t = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      answersUpdatedEl.textContent =
+        "上次更新：" +
+        t.getFullYear() +
+        "-" +
+        pad(t.getMonth() + 1) +
+        "-" +
+        pad(t.getDate()) +
+        " " +
+        pad(t.getHours()) +
+        ":" +
+        pad(t.getMinutes()) +
+        ":" +
+        pad(t.getSeconds());
+    }
+
+    function scheduleFlushVoice() {
+      if (flushTimer) clearTimeout(flushTimer);
+      flushTimer = setTimeout(flushVoiceToServer, SILENCE_AFTER_FINAL_MS);
+    }
+
+    function flushVoiceToServer() {
+      flushTimer = null;
+      const t = voiceFinalBuffer.replace(/\s+/g, " ").trim();
+      voiceFinalBuffer = "";
+      lastInterim = "";
+      setLiveHint();
+      if (t) enqueueUserMessage(t);
+    }
+
+    async function startSession() {
+      speechErr.textContent = "";
+      let questions;
+      try {
+        questions = JSON.parse($("survey").value.trim());
+        if (!Array.isArray(questions) || !questions.length) throw new Error("questions 须为非空数组");
+      } catch (e) {
+        speechErr.textContent = "问卷 JSON 无效：" + e.message;
+        return;
+      }
+      const res = await fetch(apiUrl("/sessions"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questions }),
+      });
+      if (!res.ok) {
+        speechErr.textContent = "创建会话失败：" + (await res.text());
+        return;
+      }
+      const data = await res.json();
+      sessionId = data.session_id;
+      $("sessionLabel").textContent = "session_id: " + sessionId;
+      setAnswers({});
+      answersUpdatedEl.textContent = "会话已开始，说出或输入内容后即在后端分析；仅更新下方答案。";
+    }
+
+    function enqueueUserMessage(text) {
+      const t = (text || "").trim();
+      if (!t) return;
+      if (!sessionId) {
+        speechErr.textContent = "请先「开始会话」";
+        return;
+      }
+      msgQueue.push(t);
+      drainQueue();
+    }
+
+    async function drainQueue() {
+      if (drainRunning) return;
+      drainRunning = true;
+      speechErr.textContent = "";
+      try {
+        while (msgQueue.length) {
+          const t = msgQueue.shift();
+          const res = await fetch(apiUrl("/sessions/" + encodeURIComponent(sessionId) + "/messages"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: t }),
+          });
+          if (!res.ok) {
+            speechErr.textContent = "发送失败：" + (await res.text());
+            break;
+          }
+          const data = await res.json();
+          setAnswers(data.answers || {});
+        }
+      } finally {
+        drainRunning = false;
+      }
+    }
+
+    $("btnStart").onclick = startSession;
+    $("btnSend").onclick = () => {
+      enqueueUserMessage($("textIn").value);
+      $("textIn").value = "";
+    };
+    $("textIn").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        enqueueUserMessage($("textIn").value);
+        $("textIn").value = "";
+      }
+    });
+
+    function updateMicButtonLabel() {
+      $("btnMic").textContent = micArmed ? "持续聆听：开" : "持续聆听：关";
+      $("btnMic").classList.toggle("listening", micArmed);
+    }
+
+    function stopContinuousMic() {
+      micArmed = false;
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      if (voiceFinalBuffer.trim() || lastInterim.trim()) {
+        voiceFinalBuffer = (voiceFinalBuffer + " " + lastInterim).replace(/\s+/g, " ").trim();
+        lastInterim = "";
+        if (voiceFinalBuffer) enqueueUserMessage(voiceFinalBuffer);
+        voiceFinalBuffer = "";
+      }
+      try {
+        recognition.stop();
+      } catch (_) {}
+      setLiveHint();
+      updateMicButtonLabel();
+    }
+
+    function startContinuousMic() {
+      if (!sessionId) {
+        speechErr.textContent = "请先「开始会话」";
+        return;
+      }
+      speechErr.textContent = "";
+      micArmed = true;
+      voiceFinalBuffer = "";
+      lastInterim = "";
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      setLiveHint();
+      updateMicButtonLabel();
+      try {
+        recognition.start();
+      } catch (err) {
+        micArmed = false;
+        updateMicButtonLabel();
+        speechErr.textContent = "无法启动识别：" + err.message;
+      }
+    }
+
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      speechErr.textContent = "当前浏览器不支持 Web Speech 识别，请仅用文本输入。";
+      $("btnMic").disabled = true;
+    } else {
+      recognition = new SR();
+      recognition.lang = "zh-CN";
+      recognition.interimResults = true;
+      recognition.continuous = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onerror = (e) => {
+        speechErr.textContent = "语音识别：" + (e.error || "");
+        if (e.error === "not-allowed") {
+          micArmed = false;
+          updateMicButtonLabel();
+        }
+      };
+
+      recognition.onend = () => {
+        if (micArmed) {
+          try {
+            recognition.start();
+          } catch (_) {}
+        } else {
+          updateMicButtonLabel();
+        }
+      };
+
+      recognition.onresult = (e) => {
+        if (!micArmed) return;
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const row = e.results[i];
+          const chunk = (row[0] && row[0].transcript) ? row[0].transcript : "";
+          if (row.isFinal) {
+            lastInterim = "";
+            const piece = chunk.trim();
+            if (piece) {
+              voiceFinalBuffer = (voiceFinalBuffer ? voiceFinalBuffer + " " : "") + piece;
+              scheduleFlushVoice();
+            }
+          } else {
+            lastInterim = chunk.trim();
+          }
+        }
+        setLiveHint();
+      };
+
+      $("btnMic").onclick = () => {
+        if (micArmed) stopContinuousMic();
+        else startContinuousMic();
+      };
+    }
+  </script>
+</body>
+</html>
