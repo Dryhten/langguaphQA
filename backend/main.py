@@ -65,6 +65,14 @@ def post_message(session_id: str, body: ChatMessageBody):
 
 _root = Path(__file__).resolve().parent.parent
 _frontend_index = _root / "frontend" / "index.html"
+_survey_default = _root / "frontend" / "survey-default.json"
+
+
+@app.get("/survey-default.json")
+def serve_survey_default():
+    if _survey_default.is_file():
+        return FileResponse(_survey_default, media_type="application/json")
+    raise HTTPException(status_code=404, detail="frontend/survey-default.json not found")
 
 
 @app.get("/")

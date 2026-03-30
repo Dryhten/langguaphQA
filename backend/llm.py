@@ -17,10 +17,10 @@ def _compat_base_url() -> str | None:
 
 
 def _llm_api_key() -> str:
-    key = (os.getenv("DASHSCOPE_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()
+    key = (os.getenv("OPENAI_LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()
     if not key:
         raise ValueError(
-            "请在 .env 中设置 DASHSCOPE_API_KEY（兼容模式也可使用 OPENAI_API_KEY）。"
+            "请在 .env 中设置 OPENAI_LLM_API_KEY（兼容模式也可使用 OPENAI_API_KEY）。"
         )
     return key
 
