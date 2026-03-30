@@ -1,4 +1,4 @@
-# Langguaph
+# LangguaphQA
 
 基于 **FastAPI + LangGraph** 的语音问卷对话代理：创建会话、多轮问答并汇总答案。
 
@@ -54,3 +54,7 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8000
 |------|------|------|
 | `POST` | `/sessions` | 创建会话（问卷题目） |
 | `POST` | `/sessions/{id}/messages` | 发送用户文本，返回助手回复与当前答案 |
+
+## LangGraph
+
+本项目的对话与问卷状态机在服务端由 **[LangGraph](https://github.com/langchain-ai/langgraph)** 编排：以图（graph）组织节点与边，在多轮用户语音/文本输入下维护会话状态并驱动 LLM 结构化产出。LangGraph 是面向**有状态、可长时间运行**的智能体与工作流的底层编排框架，与 LangChain 生态集成，适合本场景的每轮消息进图、更新「已锁定答案」等流程。仓库与概览见：[langchain-ai/langgraph](https://github.com/langchain-ai/langgraph)；文档见 [LangGraph 文档](https://docs.langchain.com/oss/python/langgraph/)。
